@@ -1,6 +1,22 @@
 server:
-  port: ${PORT:10000}
+  port: 10000
 
-spring:
-  main:
-    banner-mode: "off"
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs
+
+# Seguridad
+SIGN_REQUIRE_API_KEY: true
+SIGN_API_KEY_HEADER: x-api-key
+# En Render: define SIGN_API_KEYS como variable de entorno (p.ej. "k1,k2")
