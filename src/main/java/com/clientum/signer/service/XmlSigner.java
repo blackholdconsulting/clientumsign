@@ -1,83 +1,103 @@
 package com.clientum.signer.service;
 
-import org.apache.xml.security.Init;
-import org.apache.xml.security.c14n.Canonicalizer;
-import org.apache.xml.security.signature.XMLSignature;
-import org.apache.xml.security.transforms.Transforms;
-import org.apache.xml.security.utils.Constants;
 import org.springframework.stereotype.Service;
+
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 
+import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
-import javax.xml.transform.OutputKeys;
 import javax.xml.transform.Transformer;
 import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
+
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
+import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
-import java.security.KeyStore;
 import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
 
+import org.apache.xml.security.Init;
+import org.apache.xml.security.keys.KeyInfo;
+import org.apache.xml.security.keys.content.X509Data;
+import org.apache.xml.security.signature.XMLSignature;
+import org.apache.xml.security.transforms.Transforms;
+// 👇 Esta es la constante correcta para el digest
+import org.apache.xml.security.algorithms.MessageDigestAlgorithm;
+
+/**
+ * Firma XML en modo enveloped con RSA-SHA256 y digest SHA-256 (Santuario).
+ */
 @Service
 public class XmlSigner {
 
-    private final PrivateKey privateKey;
-    private final X509Certificate certificate;
-
     static {
-        // inicializa apache xmlsec una sola vez
+        // Inicializa la librería de Apache Santuario una sola vez
         Init.init();
-        System.setProperty("org.apache.xml.security.ignoreLineBreaks", "true");
     }
 
-    public XmlSigner(KeyStore.PrivateKeyEntry entry) {
-        this.privateKey   = entry.getPrivateKey();
-        this.certificate  = (X509Certificate) entry.getCertificate();
-    }
+    /**
+     * Firma un XML (texto) usando clave privada + certificado X509.
+     * Devuelve el XML firmado (texto).
+     */
+    public String signEnveloped(String xmlPlain, PrivateKey privateKey, X509Certificate certificate) throws Exception {
+        Document doc = parse(xmlPlain);
 
-    public String signXml(String xml) throws Exception {
-        byte[] bytes = xml.getBytes(StandardCharsets.UTF_8);
-        return signXml(bytes);
-    }
-
-    public String signXml(byte[] xmlBytes) throws Exception {
-        DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
-        dbf.setNamespaceAware(true);
-        Document doc = dbf.newDocumentBuilder().parse(new ByteArrayInputStream(xmlBytes));
-
-        // Firma RSA-SHA256, C14N sin comentarios
-        XMLSignature sig = new XMLSignature(
+        // Crea la firma RSA-SHA256
+        XMLSignature xmlSignature = new XMLSignature(
                 doc,
                 "",
-                XMLSignature.ALGO_ID_SIGNATURE_RSA_SHA256,
-                Canonicalizer.ALGO_ID_C14N_OMIT_COMMENTS
+                XMLSignature.ALGO_ID_SIGNATURE_RSA_SHA256
         );
 
+        // Inserta el nodo <Signature> como primer hijo del elemento raíz
         Element root = doc.getDocumentElement();
-        root.appendChild(sig.getElement());
+        root.insertBefore(xmlSignature.getElement(), root.getFirstChild());
 
+        // Transforms: enveloped + canonicalización
         Transforms transforms = new Transforms(doc);
         transforms.addTransform(Transforms.TRANSFORM_ENVELOPED_SIGNATURE);
-        transforms.addTransform(Transforms.TRANSFORM_C14N_OMIT_COMMENTS);
-        sig.addDocument("", transforms, Constants.ALGO_ID_DIGEST_SHA256);
+        transforms.addTransform(Transforms.TRANSFORM_C14N_EXCL_OMIT_COMMENTS);
 
-        sig.addKeyInfo(certificate);
-        sig.addKeyInfo(certificate.getPublicKey());
+        // Referencia al documento con digest SHA-256 (👈 cambio principal)
+        xmlSignature.addDocument(
+                "",
+                transforms,
+                MessageDigestAlgorithm.ALGO_ID_DIGEST_SHA256
+        );
 
-        PrivateKey pk = this.privateKey;
-        sig.sign(pk);
+        // KeyInfo con el certificado
+        KeyInfo keyInfo = new KeyInfo(doc);
+        X509Data x509Data = new X509Data(doc);
+        x509Data.addCertificate(certificate);
+        keyInfo.add(x509Data);
+        xmlSignature.appendKeyInfo(keyInfo);
+        xmlSignature.addKeyInfo(certificate.getPublicKey());
 
-        // Serializa
+        // Firma
+        xmlSignature.sign(privateKey);
+
+        // Devuelve el XML firmado en texto
+        return toString(doc);
+    }
+
+    // -------------------- helpers --------------------
+
+    private static Document parse(String xml) throws Exception {
+        DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+        dbf.setNamespaceAware(true); // muy importante para XMLDSig
+        DocumentBuilder db = dbf.newDocumentBuilder();
+        try (ByteArrayInputStream bais = new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8))) {
+            return db.parse(bais);
+        }
+    }
+
+    private static String toString(Document doc) throws Exception {
         TransformerFactory tf = TransformerFactory.newInstance();
-        Transformer t = tf.newTransformer();
-        t.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "no");
-        t.setOutputProperty(OutputKeys.INDENT, "no");
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        t.transform(new DOMSource(doc), new StreamResult(out));
-        return out.toString(StandardCharsets.UTF_8);
+        Transformer transformer = tf.newTransformer();
+        StringWriter sw = new StringWriter();
+        transformer.transform(new DOMSource(doc), new StreamResult(sw));
+        return sw.toString();
     }
 }
