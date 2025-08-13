@@ -8,8 +8,7 @@ RUN mvn -q -DskipTests package
 # ---------- Runtime ----------
 FROM eclipse-temurin:21-jre
 WORKDIR /app
-ENV JAVA_OPTS="-Xms128m -Xmx512m"
-ENV PORT=8080
+COPY --from=build /app/target/signer-0.0.1.jar /app/app.jar
 EXPOSE 8080
-COPY --from=build /app/target/*.jar /app/app.jar
-CMD ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar"]
+ENV JAVA_OPTS=""
+ENTRYPOINT ["sh","-c","java $JAVA_OPTS -jar /app/app.jar"]
