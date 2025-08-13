@@ -1,65 +1,72 @@
 package com.clientum.signer.config;
 
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.io.ByteArrayInputStream;
+import java.io.File;
 import java.io.FileInputStream;
-import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
-import java.security.KeyStore.PrivateKeyEntry;
+import java.security.PrivateKey;
+import java.security.cert.Certificate;
 import java.util.Base64;
 import java.util.Enumeration;
 
 @Configuration
 public class KeyConfig {
 
-    @Bean
-    public PrivateKeyEntry signerKeyEntry() throws Exception {
-        String ksB64 = System.getenv("SIGN_KEYSTORE_BASE64"); // recomendado en Render
-        String ksPath = System.getenv("SIGN_KEYSTORE_PATH");   // alternativa: ruta a .p12
-        String ksPass = envOrDefault("SIGN_KEYSTORE_PASSWORD", "changeit");
-        String keyPass = envOrDefault("SIGN_KEY_PASSWORD", ksPass);
-        String aliasEnv = System.getenv("SIGN_KEY_ALIAS"); // opcional
+  /**
+   * Bean OPCIONAL: solo se crea si hay un keystore global configurado por ENV.
+   * Así el servicio arranca sin problemas en modo multiusuario (p12 por petición).
+   */
+  @Bean
+  @ConditionalOnExpression("('${SIGN_KEYSTORE_BASE64:}' != '') or ('${SIGN_KEYSTORE_PATH:}' != '')")
+  public KeyStore.PrivateKeyEntry signerKeyEntry(
+      @Value("${SIGN_KEYSTORE_BASE64:}") String ksBase64,
+      @Value("${SIGN_KEYSTORE_PATH:}")  String ksPath,
+      @Value("${SIGN_KEYSTORE_PASSWORD:}") String storePassword,
+      @Value("${SIGN_KEY_ALIAS:}") String alias,
+      @Value("${SIGN_KEY_PASSWORD:}") String keyPassword
+  ) throws Exception {
 
-        KeyStore ks = KeyStore.getInstance("PKCS12");
-
-        if (ksB64 != null && !ksB64.isBlank()) {
-            byte[] bytes = Base64.getMimeDecoder().decode(ksB64.getBytes(StandardCharsets.UTF_8));
-            ks.load(new ByteArrayInputStream(bytes), ksPass.toCharArray());
-        } else if (ksPath != null && !ksPath.isBlank()) {
-            try (FileInputStream fis = new FileInputStream(ksPath)) {
-                ks.load(fis, ksPass.toCharArray());
-            }
-        } else {
-            throw new IllegalStateException("Debe definir SIGN_KEYSTORE_BASE64 o SIGN_KEYSTORE_PATH");
-        }
-
-        String alias = aliasEnv;
-        if (alias == null || alias.isBlank()) {
-            alias = firstPrivateKeyAlias(ks);
-            if (alias == null) throw new IllegalStateException("No se encontró alias con clave privada en el keystore");
-        }
-
-        KeyStore.ProtectionParameter prot = new KeyStore.PasswordProtection(keyPass.toCharArray());
-        KeyStore.Entry entry = ks.getEntry(alias, prot);
-        if (!(entry instanceof PrivateKeyEntry pke)) {
-            throw new IllegalStateException("El alias '" + alias + "' no contiene una clave privada");
-        }
-        return pke;
+    if (storePassword == null || storePassword.isBlank()) {
+      throw new IllegalStateException("Falta SIGN_KEYSTORE_PASSWORD para el keystore global");
     }
 
-    private static String firstPrivateKeyAlias(KeyStore ks) throws Exception {
-        Enumeration<String> aliases = ks.aliases();
-        while (aliases.hasMoreElements()) {
-            String a = aliases.nextElement();
-            if (ks.isKeyEntry(a)) return a;
-        }
-        return null;
+    char[] sp = storePassword.toCharArray();
+    char[] kp = (keyPassword != null && !keyPassword.isBlank())
+        ? keyPassword.toCharArray() : sp;
+
+    KeyStore ks = KeyStore.getInstance("PKCS12");
+
+    if (ksBase64 != null && !ksBase64.isBlank()) {
+      byte[] bytes = Base64.getDecoder().decode(ksBase64.replaceAll("\\s", ""));
+      ks.load(new ByteArrayInputStream(bytes), sp);
+    } else {
+      File f = new File(ksPath);
+      try (FileInputStream fis = new FileInputStream(f)) {
+        ks.load(fis, sp);
+      }
     }
 
-    private static String envOrDefault(String k, String def) {
-        String v = System.getenv(k);
-        return (v == null || v.isBlank()) ? def : v;
-        }
+    String effectiveAlias = alias;
+    if (effectiveAlias == null || effectiveAlias.isBlank() || !ks.containsAlias(effectiveAlias)) {
+      Enumeration<String> aliases = ks.aliases();
+      if (!aliases.hasMoreElements()) {
+        throw new IllegalStateException("El PKCS12 no contiene alias");
+      }
+      effectiveAlias = aliases.nextElement();
+    }
+
+    PrivateKey pk = (PrivateKey) ks.getKey(effectiveAlias, kp);
+    Certificate[] chain = ks.getCertificateChain(effectiveAlias);
+    if (chain == null || chain.length == 0) {
+      Certificate c = ks.getCertificate(effectiveAlias);
+      if (c != null) chain = new Certificate[]{c};
+    }
+
+    return new KeyStore.PrivateKeyEntry(pk, chain);
+  }
 }
