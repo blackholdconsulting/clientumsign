@@ -1,27 +1,34 @@
 package com.clientum.signer;
 
-import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-// DSS (módulos que SÍ están en Maven Central con 6.3)
 import eu.europa.esig.dss.model.InMemoryDocument;
-import eu.europa.esig.dss.validation.CommonCertificateVerifier;
 
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 @RestController
+@RequestMapping("/api")
 public class SignController {
 
-    @GetMapping(value = "/api/smoke", produces = MediaType.TEXT_PLAIN_VALUE)
-    public String smoke() {
-        // Solo usamos clases seguras (presentes en dss-document y dss-validation)
-        byte[] xml = "<root/>".getBytes(StandardCharsets.UTF_8);
-        InMemoryDocument doc = new InMemoryDocument(xml);
-        doc.setName("doc.xml");
+    @GetMapping("/smoke")
+    public Map<String, Object> smoke() {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("status", "ok");
 
-        CommonCertificateVerifier verifier = new CommonCertificateVerifier();
-        // Si llegamos aquí, DSS está en el classpath y enlaza bien.
-        return "DSS OK - doc: " + doc.getName();
+        // Probar que la librería DSS está presente creando un InMemoryDocument
+        try {
+            byte[] xml = "<test/>".getBytes(StandardCharsets.UTF_8);
+            InMemoryDocument doc = new InMemoryDocument(xml, "test.xml");
+            out.put("dss", "ok");
+            out.put("docClass", doc.getClass().getName());
+        } catch (Throwable t) {
+            out.put("dss", "error: " + t.getClass().getSimpleName() + " - " + t.getMessage());
+        }
+
+        return out;
     }
 }
