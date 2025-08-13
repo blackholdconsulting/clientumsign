@@ -1,115 +1,110 @@
 package com.clientum.signer;
 
-import eu.europa.esig.dss.enumerations.DigestAlgorithm;
-import eu.europa.esig.dss.enumerations.SignatureLevel;
-import eu.europa.esig.dss.enumerations.SignaturePackaging;
-import eu.europa.esig.dss.model.DSSDocument;
-import eu.europa.esig.dss.model.InMemoryDocument;
-import eu.europa.esig.dss.model.SignatureValue;
-import eu.europa.esig.dss.model.ToBeSigned;
-import eu.europa.esig.dss.token.DSSPrivateKeyEntry;
-import eu.europa.esig.dss.token.Pkcs12SignatureToken;
-import eu.europa.esig.dss.validation.CommonCertificateVerifier;
-import eu.europa.esig.dss.xades.XAdESSignatureParameters;
-import eu.europa.esig.dss.xades.signature.XAdESService;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 
-import java.io.ByteArrayInputStream;
-import java.nio.charset.StandardCharsets;
+import java.security.KeyStore;
 import java.util.Base64;
 import java.util.List;
 
-/**
- * POST /xades-epes
- * Body JSON:
- * {
- *   "xml": "<Facturae ...>...</Facturae>",
- *   "p12": "BASE64_P12",
- *   "password": "claveP12",
- *   // opcionales (para EPES Facturae 3.1):
- *   "policyId": "urn:facturae:policies:facturae-3-1",
- *   "policyUrl": "https://www.facturae.gob.es/Politica_de_firma/Politica_de_firma_v3_1.pdf",
- *   "policyHashBase64": "BASE64_DEL_HASH_DE_LA_POLITICA",
- *   "policyDigest": "SHA256"
- * }
- */
+import eu.europa.esig.dss.model.DSSDocument;
+import eu.europa.esig.dss.model.InMemoryDocument;
+import eu.europa.esig.dss.model.Policy;
+import eu.europa.esig.dss.model.SignatureValue;
+import eu.europa.esig.dss.model.ToBeSigned;
+import eu.europa.esig.dss.enumerations.DigestAlgorithm;
+import eu.europa.esig.dss.enumerations.SignatureLevel;
+import eu.europa.esig.dss.enumerations.SignaturePackaging;
+
+import eu.europa.esig.dss.token.DSSPrivateKeyEntry;
+import eu.europa.esig.dss.token.Pkcs12SignatureToken;
+
+import eu.europa.esig.dss.xades.XAdESSignatureParameters;
+import eu.europa.esig.dss.xades.signature.XAdESService;
+
+import eu.europa.esig.dss.validation.CommonCertificateVerifier;
+
 @RestController
+@RequestMapping("/xades")
 public class SignController {
 
   public record SignRequest(
-      String xml,
-      String p12,
-      String password,
-      String policy,           // alias opcional (no se usa si pasas los 4 campos de política)
-      String policyId,
-      String policyUrl,
-      String policyHashBase64,
-      String policyDigest
+      String xmlBase64,           // XML a firmar (base64)
+      String p12Base64,           // P12 (base64)
+      String password,            // contraseña del P12
+      // Política EPES:
+      String policyId,            // ej: "urn:oid:2.16.724.1.3.1.1.2.1.9"
+      String policyUrl,           // URL info política
+      String policyDigestAlg,     // "SHA256" / "SHA512"...
+      String policyHashBase64     // hash de la política en base64
   ) {}
 
-  @GetMapping("/health")
-  public String health() { return "OK"; }
+  public record SignResponse(String signedXmlBase64) {}
 
   @PostMapping(
-      value = "/xades-epes",
+      path = "/epes",
       consumes = MediaType.APPLICATION_JSON_VALUE,
-      produces = MediaType.APPLICATION_XML_VALUE
-  )
-  public @ResponseBody byte[] sign(@RequestBody SignRequest req) throws Exception {
-    if (req.xml() == null || req.xml().isBlank())
-      throw new IllegalArgumentException("xml es obligatorio");
-    if (req.p12() == null || req.p12().isBlank())
-      throw new IllegalArgumentException("p12 es obligatorio (Base64)");
-    if (req.password() == null)
-      throw new IllegalArgumentException("password es obligatorio");
+      produces = MediaType.APPLICATION_JSON_VALUE)
+  public SignResponse signEpes(@RequestBody SignRequest req) throws Exception {
 
-    byte[] xmlBytes = req.xml().getBytes(StandardCharsets.UTF_8);
-    byte[] p12Bytes = Base64.getDecoder().decode(req.p12());
+    // 1) Documento a firmar (enveloped)
+    byte[] xmlBytes = Base64.getDecoder().decode(req.xmlBase64());
+    DSSDocument document = new InMemoryDocument(xmlBytes, "document.xml");
 
-    try (Pkcs12SignatureToken token =
-             new Pkcs12SignatureToken(new ByteArrayInputStream(p12Bytes), req.password().toCharArray())) {
+    // 2) Token PKCS#12 (nota: PasswordProtection en DSS 6.x)
+    byte[] p12 = Base64.getDecoder().decode(req.p12Base64());
+    KeyStore.PasswordProtection prot =
+        new KeyStore.PasswordProtection((req.password() == null ? "" : req.password()).toCharArray());
 
+    DSSPrivateKeyEntry entry;
+    try (Pkcs12SignatureToken token = new Pkcs12SignatureToken(p12, prot)) {
       List<DSSPrivateKeyEntry> keys = token.getKeys();
-      if (keys.isEmpty()) throw new IllegalStateException("No se encontró clave en el P12");
-      DSSPrivateKeyEntry entry = keys.get(0);
+      if (keys == null || keys.isEmpty()) {
+        throw new IllegalStateException("El P12 no contiene clave de firma");
+      }
+      entry = keys.get(0);
 
-      // Documento a firmar
-      DSSDocument document = new InMemoryDocument(xmlBytes, "facturae.xml");
-
-      // Parámetros XAdES
+      // 3) Parámetros XAdES (EPES = Baseline B + Policy)
       XAdESSignatureParameters params = new XAdESSignatureParameters();
-      params.setSignatureLevel(SignatureLevel.XAdES_BASELINE_B);     // nivel base
-      params.setSignaturePackaging(SignaturePackaging.ENVELOPED);    // firma embebida en el XML
-      params.setDigestAlgorithm(DigestAlgorithm.SHA256);
+      params.setSignaturePackaging(SignaturePackaging.ENVELOPED);
+      params.setSignatureLevel(SignatureLevel.XAdES_BASELINE_B);
       params.setSigningCertificate(entry.getCertificate());
       params.setCertificateChain(entry.getCertificateChain());
 
-      // ---- EPES (política explícita) ----
-      // Si te pasan los 4 campos de política (Id/URL/hashBase64/digest) los aplicamos.
-      if (notBlank(req.policyId()) && notBlank(req.policyUrl())
-          && notBlank(req.policyHashBase64()) && notBlank(req.policyDigest())) {
+      // Política EPES en DSS 6.x -> Policy + bLevel.setSignaturePolicy(...)
+      if (req.policyId() != null && !req.policyId().isBlank()
+          && req.policyDigestAlg() != null && !req.policyDigestAlg().isBlank()
+          && req.policyHashBase64() != null && !req.policyHashBase64().isBlank()) {
 
-        var bLevel = params.bLevel();
-        bLevel.setSignaturePolicyId(req.policyId());
-        bLevel.setSignaturePolicyDescription("Facturae policy");
-        bLevel.setSignaturePolicyQualifier(req.policyUrl());
-        bLevel.setSignaturePolicyDigestAlgorithm(DigestAlgorithm.forName(req.policyDigest()));
-        bLevel.setSignaturePolicyHash(Base64.getDecoder().decode(req.policyHashBase64()));
+        Policy policy = new Policy();
+        policy.setId(req.policyId());
+        if (req.policyUrl() != null && !req.policyUrl().isBlank()) {
+          policy.setSpuri(req.policyUrl());
+        }
+        DigestAlgorithm da = DigestAlgorithm.forName(req.policyDigestAlg());
+        policy.setDigestAlgorithm(da);
+        policy.setDigestValue(Base64.getDecoder().decode(req.policyHashBase64()));
+
+        params.bLevel().setSignaturePolicy(policy);
       }
-      // Si NO se pasan, firmará como XAdES-B. Para FACe, envía la política correcta desde tu backend.
 
-      // Servicio y flujo de firma
+      // 4) Servicio XAdES con verificador (requerido por DSS)
       CommonCertificateVerifier verifier = new CommonCertificateVerifier();
       XAdESService service = new XAdESService(verifier);
 
+      // 5) Flujo de firma DSS
       ToBeSigned toBeSigned = service.getDataToSign(document, params);
-      SignatureValue signatureValue = token.sign(toBeSigned, params.getDigestAlgorithm(), entry);
+      SignatureValue signatureValue =
+          token.sign(toBeSigned, params.getDigestAlgorithm(), entry);
+
       DSSDocument signed = service.signDocument(document, params, signatureValue);
 
-      return signed.openStream().readAllBytes();
+      return new SignResponse(Base64.getEncoder().encodeToString(signed.openStream().readAllBytes()));
     }
   }
 
-  private static boolean notBlank(String s) { return s != null && !s.isBlank(); }
+  @GetMapping("/health")
+  public String health() {
+    return "OK";
+  }
 }
