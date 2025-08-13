@@ -1,9 +1,9 @@
 package com.clientum.signer.service;
 
 import org.apache.xml.security.Init;
+import org.apache.xml.security.algorithms.MessageDigestAlgorithm;
 import org.apache.xml.security.signature.XMLSignature;
 import org.apache.xml.security.transforms.Transforms;
-import org.apache.xml.security.utils.Constants;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.w3c.dom.Document;
@@ -25,22 +25,17 @@ import java.security.cert.X509Certificate;
 import java.util.Base64;
 import java.util.Enumeration;
 
-/**
- * Firmado XMLDSig enveloped con SHA256withRSA (Santuario).
- * - signXml(String): usa el keystore global si está configurado (opcional).
- * - signXmlWithP12(String, byte[], String): multiusuario, p12 por petición.
- */
 @Service
 public class XmlSigner {
 
   static {
-    // Inicializa Santuario una sola vez
     try { Init.init(); } catch (Throwable ignored) {}
   }
 
   @Autowired(required = false)
-  private KeyStore.PrivateKeyEntry signerKeyEntry; // opcional (global)
+  private KeyStore.PrivateKeyEntry signerKeyEntry; // keystore global opcional
 
+  /** Usa keystore global si está configurado. */
   public String signXml(String xml) throws Exception {
     if (signerKeyEntry == null) {
       throw new IllegalStateException("No hay keystore global configurado. Usa signXmlWithP12 enviando p12Base64 y p12Password.");
@@ -48,12 +43,12 @@ public class XmlSigner {
     return signXmlWithKey(xml, signerKeyEntry);
   }
 
+  /** Multiusuario: firma con el .p12 que llega por petición. */
   public String signXmlWithP12(String xml, byte[] p12Bytes, String password) throws Exception {
     char[] sp = password == null ? new char[0] : password.toCharArray();
     KeyStore ks = KeyStore.getInstance("PKCS12");
     ks.load(new ByteArrayInputStream(p12Bytes), sp);
 
-    // Alias efectivo
     String alias = null;
     for (Enumeration<String> e = ks.aliases(); e.hasMoreElements();) {
       String a = e.nextElement();
@@ -78,7 +73,6 @@ public class XmlSigner {
     Document doc = dbf.newDocumentBuilder()
         .parse(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
 
-    // Crear firma enveloped RSA-SHA256
     XMLSignature signature = new XMLSignature(doc, "",
         XMLSignature.ALGO_ID_SIGNATURE_RSA_SHA256);
 
@@ -88,7 +82,7 @@ public class XmlSigner {
     Transforms transforms = new Transforms(doc);
     transforms.addTransform(Transforms.TRANSFORM_ENVELOPED_SIGNATURE);
     transforms.addTransform(Transforms.TRANSFORM_C14N_EXCL_OMIT_COMMENTS);
-    signature.addDocument("", transforms, Constants.ALGO_ID_DIGEST_SHA256);
+    signature.addDocument("", transforms, MessageDigestAlgorithm.ALGO_ID_DIGEST_SHA256);
 
     X509Certificate cert = (X509Certificate) entry.getCertificate();
     if (cert != null) {
@@ -96,10 +90,8 @@ public class XmlSigner {
       signature.addKeyInfo(cert.getPublicKey());
     }
 
-    PrivateKey privateKey = entry.getPrivateKey();
-    signature.sign(privateKey);
+    signature.sign(entry.getPrivateKey());
 
-    // Serializar
     Transformer tf = TransformerFactory.newInstance().newTransformer();
     tf.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "no");
     tf.setOutputProperty(OutputKeys.ENCODING, "UTF-8");
@@ -109,20 +101,7 @@ public class XmlSigner {
     return sw.toString();
   }
 
-  /** Utilidad: devuelve Base64 de un XML. */
   public static String toBase64(String xml) {
     return Base64.getEncoder().encodeToString(xml.getBytes(StandardCharsets.UTF_8));
   }
-
-  /** Utilidad: obtiene texto desde base64 si viene así. */
-  public static String fromMaybeBase64(String rawOrB64) {
-    try {
-      byte[] decoded = Base64.getDecoder().decode(rawOrB64);
-      String s = new String(decoded, StandardCharsets.UTF_8);
-      // heurística: si al decodificar parece XML, lo devolvemos
-      if (s.trim().startsWith("<")) return s;
-    } catch (IllegalArgumentException ignored) {}
-    return rawOrB64;
-  }
 }
-
