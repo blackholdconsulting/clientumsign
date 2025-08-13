@@ -23,8 +23,6 @@ import java.util.Base64;
 import java.util.Enumeration;
 
 import org.apache.xml.security.Init;
-import org.apache.xml.security.keys.KeyInfo;
-import org.apache.xml.security.keys.content.X509Data;
 import org.apache.xml.security.signature.XMLSignature;
 import org.apache.xml.security.transforms.Transforms;
 import org.apache.xml.security.algorithms.MessageDigestAlgorithm;
@@ -32,6 +30,12 @@ import org.apache.xml.security.algorithms.MessageDigestAlgorithm;
 /**
  * Firma XML (enveloped) usando Apache Santuario,
  * algoritmo RSA-SHA256 y digest SHA-256.
+ *
+ * Variables de entorno:
+ *  - SIGN_P12_BASE64    (obligatoria) PKCS#12 en Base64
+ *  - SIGN_P12_PASSWORD  (opcional)   password del keystore
+ *  - SIGN_KEY_ALIAS     (opcional)   alias; si falta, coge el primero
+ *  - SIGN_KEY_PASSWORD  (opcional)   si falta, usa SIGN_P12_PASSWORD
  */
 @Service
 public class XmlSigner {
@@ -41,16 +45,7 @@ public class XmlSigner {
         Init.init();
     }
 
-    /**
-     * Atajo que firma un XML cargando el par clave/certificado
-     * desde variables de entorno con un PKCS#12 en Base64.
-     *
-     * Vars usadas:
-     *  - SIGN_P12_BASE64       (obligatoria)
-     *  - SIGN_P12_PASSWORD     (opcional)
-     *  - SIGN_KEY_ALIAS        (opcional; si falta se coge el primero)
-     *  - SIGN_KEY_PASSWORD     (opcional; si falta usa SIGN_P12_PASSWORD)
-     */
+    /** Atajo: firma tomando la clave/certificado de variables de entorno. */
     public String signXml(String xmlPlain) throws Exception {
         String p12b64 = System.getenv("SIGN_P12_BASE64");
         if (p12b64 == null || p12b64.isEmpty()) {
@@ -79,7 +74,7 @@ public class XmlSigner {
         }
 
         Key key = ks.getKey(keyAlias, keyPwd);
-        if (key == null || !(key instanceof PrivateKey)) {
+        if (!(key instanceof PrivateKey)) {
             throw new IllegalStateException("No se pudo obtener la clave privada para el alias: " + keyAlias);
         }
 
@@ -91,9 +86,7 @@ public class XmlSigner {
         return signEnveloped(xmlPlain, (PrivateKey) key, cert);
     }
 
-    /**
-     * Firma enveloped usando la clave privada y certificado dados.
-     */
+    /** Firma enveloped usando la clave privada y certificado dados. */
     public String signEnveloped(String xmlPlain, PrivateKey privateKey, X509Certificate certificate) throws Exception {
         Document doc = parse(xmlPlain);
 
@@ -113,22 +106,15 @@ public class XmlSigner {
         transforms.addTransform(Transforms.TRANSFORM_ENVELOPED_SIGNATURE);
         transforms.addTransform(Transforms.TRANSFORM_C14N_EXCL_OMIT_COMMENTS);
 
-        // Referencia al documento con digest SHA-256 (constante correcta)
+        // Referencia al documento con digest SHA-256
         xmlSignature.addDocument(
                 "",
                 transforms,
                 MessageDigestAlgorithm.ALGO_ID_DIGEST_SHA256
         );
 
-        // KeyInfo con el certificado
-        KeyInfo keyInfo = new KeyInfo(doc);
-        X509Data x509Data = new X509Data(doc);
-        x509Data.addCertificate(certificate);
-        keyInfo.add(x509Data);
-
-        // En Santuario no existe appendKeyInfo; usa setKeyInfo o los helpers addKeyInfo(...)
-        xmlSignature.setKeyInfo(keyInfo);
-        // (opcional) incluir también la public key
+        // KeyInfo: en esta versión se añaden vía helpers del propio XMLSignature
+        xmlSignature.addKeyInfo(certificate);
         xmlSignature.addKeyInfo(certificate.getPublicKey());
 
         // Firma con la clave privada
