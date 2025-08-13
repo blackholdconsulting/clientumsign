@@ -1,20 +1,6 @@
 server:
-  port: ${PORT:8080}
+  port: ${PORT:10000}
 
 spring:
-  application:
-    name: clientumsign
-
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info
-  endpoint:
-    health:
-      show-details: when_authorized
-
-logging:
-  level:
-    root: INFO
-    org.springframework.web: INFO
+  main:
+    banner-mode: "off"
