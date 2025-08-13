@@ -4,12 +4,6 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
-  <groupId>com.clientum</groupId>
-  <artifactId>signer</artifactId>
-  <version>0.0.1</version>
-  <name>signer</name>
-  <description>Clientum Signer</description>
-
   <parent>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-parent</artifactId>
@@ -17,13 +11,24 @@
     <relativePath/>
   </parent>
 
+  <groupId>com.clientum</groupId>
+  <artifactId>signer</artifactId>
+  <version>0.0.1</version>
+  <name>Clientum Signer</name>
+  <description>Servicio de firma XML (Facturae/VeriFactu) para Clientum</description>
+
   <properties>
     <java.version>21</java.version>
+
+    <!-- Firmas XML -->
     <xmlsec.version>4.0.3</xmlsec.version>
     <bouncycastle.version>1.78.1</bouncycastle.version>
+
+    <!-- JAXB para JDK 21 -->
     <jakarta.bind.version>4.0.2</jakarta.bind.version>
     <jaxb.runtime.version>4.0.5</jaxb.runtime.version>
-    <!-- DSS solo para tipos de modelo (InMemoryDocument, MimeType, etc.) -->
+
+    <!-- Modelos DSS (InMemoryDocument, MimeType, etc.) -->
     <dss.version>6.1.1</dss.version>
   </properties>
 
@@ -33,21 +38,27 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-web</artifactId>
     </dependency>
+
+    <!-- Validación de payloads -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-validation</artifactId>
     </dependency>
+
+    <!-- Actuator (health/liveness) -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-actuator</artifactId>
     </dependency>
 
-    <!-- Librerías de firma XML (XAdES/XMLDSig base) -->
+    <!-- Firma XML (XMLDSig) -->
     <dependency>
       <groupId>org.apache.santuario</groupId>
       <artifactId>xmlsec</artifactId>
       <version>${xmlsec.version}</version>
     </dependency>
+
+    <!-- BouncyCastle (PKCS12, certificados, etc.) -->
     <dependency>
       <groupId>org.bouncycastle</groupId>
       <artifactId>bcprov-jdk18on</artifactId>
@@ -59,7 +70,7 @@
       <version>${bouncycastle.version}</version>
     </dependency>
 
-    <!-- JAXB para marshalling/unmarshalling de Facturae/Verifactu en JDK 21 -->
+    <!-- JAXB (necesario en Java 21) -->
     <dependency>
       <groupId>jakarta.xml.bind</groupId>
       <artifactId>jakarta.xml.bind-api</artifactId>
@@ -71,7 +82,7 @@
       <version>${jaxb.runtime.version}</version>
     </dependency>
 
-    <!-- DSS (solo modelos útiles como InMemoryDocument, MimeType) -->
+    <!-- DSS (solo modelos útiles) -->
     <dependency>
       <groupId>eu.europa.ec.joinup.sd-dss</groupId>
       <artifactId>dss-model</artifactId>
@@ -80,6 +91,7 @@
   </dependencies>
 
   <build>
+    <finalName>signer-0.0.1</finalName>
     <plugins>
       <plugin>
         <groupId>org.springframework.boot</groupId>
