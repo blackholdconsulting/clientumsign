@@ -39,6 +39,12 @@
       <artifactId>spring-boot-starter-web</artifactId>
     </dependency>
 
+    <!-- Seguridad (necesario para compilar SecurityConfig) -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-security</artifactId>
+    </dependency>
+
     <!-- Validación de payloads -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
