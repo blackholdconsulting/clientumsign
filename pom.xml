@@ -1,7 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.clientum</groupId>
+  <artifactId>signer</artifactId>
+  <version>0.0.1</version>
+  <name>signer</name>
+  <description>Clientum Signer</description>
 
   <parent>
     <groupId>org.springframework.boot</groupId>
@@ -10,42 +17,28 @@
     <relativePath/>
   </parent>
 
-  <groupId>com.clientum</groupId>
-  <artifactId>signer</artifactId>
-  <version>0.0.1</version>
-  <name>signer</name>
-  <description>Clientum Signer</description>
-
   <properties>
     <java.version>21</java.version>
-    <dss.version>6.3</dss.version>
   </properties>
 
   <dependencies>
+    <!-- Web API -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-web</artifactId>
     </dependency>
 
-    <!-- DSS: documentos (InMemoryDocument, etc.) -->
+    <!-- DSS: InMemoryDocument y clases de modelo -->
     <dependency>
       <groupId>eu.europa.ec.joinup.sd-dss</groupId>
-      <artifactId>dss-document</artifactId>
-      <version>${dss.version}</version>
+      <artifactId>dss-model</artifactId>
+      <version>6.1.1</version>
     </dependency>
 
-    <!-- DSS: validación (CertificateVerifier / CommonCertificateVerifier) -->
+    <!-- Opcional: para logs bonitos en prod -->
     <dependency>
-      <groupId>eu.europa.ec.joinup.sd-dss</groupId>
-      <artifactId>dss-validation</artifactId>
-      <version>${dss.version}</version>
-    </dependency>
-
-    <!-- DSS: tokens por si luego firmamos con .p12 -->
-    <dependency>
-      <groupId>eu.europa.ec.joinup.sd-dss</groupId>
-      <artifactId>dss-token</artifactId>
-      <version>${dss.version}</version>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
     </dependency>
   </dependencies>
 
@@ -54,13 +47,18 @@
       <plugin>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
+        <configuration>
+          <mainClass>com.clientum.signer.SignerApplication</mainClass>
+        </configuration>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
         <version>3.13.0</version>
         <configuration>
-          <release>21</release>
+          <source>${java.version}</source>
+          <target>${java.version}</target>
+          <release>${java.version}</release>
         </configuration>
       </plugin>
     </plugins>
