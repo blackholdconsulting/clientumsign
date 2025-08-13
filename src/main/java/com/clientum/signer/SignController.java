@@ -53,14 +53,9 @@ public class SignController {
         );
     }
 
-    @GetMapping("/health")
-    public Map<String, Object> health() {
-        return Map.of("status", "UP");
-    }
-
     /**
      * Firma XML (enveloped) con un .p12 (PKCS#12) y contraseña.
-     * Curl de ejemplo:
+     * Ejemplo:
      * curl -X POST https://TU_HOST/api/sign/xml \
      *   -F "xml=@/ruta/ejemplo.xml" \
      *   -F "p12=@/ruta/certificado.p12" \
@@ -73,30 +68,27 @@ public class SignController {
             @RequestParam("password") String password
     ) throws Exception {
 
-        // --- Cargar KeyStore PKCS#12 ---
+        // Cargar KeyStore PKCS#12
         KeyStore ks = KeyStore.getInstance("PKCS12");
         ks.load(new ByteArrayInputStream(p12File.getBytes()), password.toCharArray());
 
         String alias = Collections.list(ks.aliases()).stream()
-                .filter(a -> {
-                    try { return ks.isKeyEntry(a); } catch (Exception e) { return false; }
-                })
+                .filter(a -> { try { return ks.isKeyEntry(a); } catch (Exception e) { return false; } })
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException("No se encontró clave en el .p12"));
 
         PrivateKey privateKey = (PrivateKey) ks.getKey(alias, password.toCharArray());
         X509Certificate cert = (X509Certificate) ks.getCertificate(alias);
 
-        // --- Parsear XML (namespace-aware y seguro) ---
+        // Parsear XML seguro
         DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
         dbf.setNamespaceAware(true);
-        // Endurecer parser
         dbf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
         dbf.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
         dbf.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
         Document doc = dbf.newDocumentBuilder().parse(new ByteArrayInputStream(xmlFile.getBytes()));
 
-        // --- Construir firma XMLDSig (enveloped, RSA-SHA256) ---
+        // Construir firma XMLDSig (enveloped, RSA-SHA256)
         XMLSignatureFactory fac = XMLSignatureFactory.getInstance("DOM");
 
         DigestMethod dm = fac.newDigestMethod(DigestMethod.SHA256, null);
@@ -127,7 +119,7 @@ public class SignController {
         XMLSignature signature = fac.newXMLSignature(si, ki);
         signature.sign(signContext);
 
-        // --- Serializar resultado ---
+        // Serializar resultado
         TransformerFactory tf = TransformerFactory.newInstance();
         tf.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
         tf.setAttribute(XMLConstants.ACCESS_EXTERNAL_STYLESHEET, "");
