@@ -1,13 +1,12 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
-                             https://maven.apache.org/xsd/maven-4.0.0.xsd">
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
   <parent>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-parent</artifactId>
-    <version>3.3.4</version>
+    <version>3.3.2</version>
     <relativePath/>
   </parent>
 
@@ -15,59 +14,52 @@
   <artifactId>signer</artifactId>
   <version>0.0.1</version>
   <name>signer</name>
-  <description>Simple XAdES signer</description>
+  <description>Clientum Signer</description>
 
   <properties>
     <java.version>21</java.version>
-    <dss.version>5.13.1</dss.version>
+    <dss.version>6.3</dss.version>
   </properties>
 
   <dependencies>
-    <!-- Web API -->
+    <!-- Web -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-web</artifactId>
     </dependency>
 
-    <!-- DSS (grupo correcto y versión disponible) -->
+    <!-- DSS: documentos / modelos -->
+    <dependency>
+      <groupId>eu.europa.ec.joinup.sd-dss</groupId>
+      <artifactId>dss-document</artifactId>
+      <version>${dss.version}</version>
+    </dependency>
+
+    <!-- DSS: XAdES -->
     <dependency>
       <groupId>eu.europa.ec.joinup.sd-dss</groupId>
       <artifactId>dss-xades</artifactId>
       <version>${dss.version}</version>
     </dependency>
+
+    <!-- DSS: validación (CertificateVerifier, etc.) -->
     <dependency>
       <groupId>eu.europa.ec.joinup.sd-dss</groupId>
       <artifactId>dss-validation</artifactId>
       <version>${dss.version}</version>
     </dependency>
+
+    <!-- DSS: tokens (PKCS#12, etc.) -->
     <dependency>
       <groupId>eu.europa.ec.joinup.sd-dss</groupId>
       <artifactId>dss-token</artifactId>
       <version>${dss.version}</version>
     </dependency>
-    <dependency>
-      <groupId>eu.europa.ec.joinup.sd-dss</groupId>
-      <artifactId>dss-utils</artifactId>
-      <version>${dss.version}</version>
-    </dependency>
 
-    <!-- BouncyCastle (recomendado para criptografía DSS) -->
-    <dependency>
-      <groupId>org.bouncycastle</groupId>
-      <artifactId>bcprov-jdk18on</artifactId>
-      <version>1.78.1</version>
-    </dependency>
-    <dependency>
-      <groupId>org.bouncycastle</groupId>
-      <artifactId>bcpkix-jdk18on</artifactId>
-      <version>1.78.1</version>
-    </dependency>
-
-    <!-- Tests opcionales -->
+    <!-- Opcional pero útil para devolver bytes como respuesta -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-test</artifactId>
-      <scope>test</scope>
+      <artifactId>spring-boot-starter</artifactId>
     </dependency>
   </dependencies>
 
