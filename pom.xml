@@ -1,29 +1,18 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
   <groupId>com.clientum</groupId>
   <artifactId>signer</artifactId>
   <version>0.0.1</version>
-  <name>clientum-signer</name>
-  <description>Signer API for XAdES-EPES (Facturae)</description>
-
+  <name>Clientum Signer</name>
+  <description>Servicio XAdES-EPES para Clientum</description>
   <properties>
     <java.version>21</java.version>
     <spring-boot.version>3.3.3</spring-boot.version>
-    <!-- Versión publicada en Maven Central -->
-    <dss.version>6.2</dss.version>
-    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <dss.version>6.3</dss.version>
   </properties>
-
-  <!-- Repos por defecto: Central -->
-  <repositories>
-    <repository>
-      <id>central</id>
-      <url>https://repo1.maven.org/maven2</url>
-    </repository>
-  </repositories>
 
   <dependencyManagement>
     <dependencies>
@@ -38,13 +27,13 @@
   </dependencyManagement>
 
   <dependencies>
-    <!-- REST -->
+    <!-- Web REST -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-web</artifactId>
     </dependency>
 
-    <!-- DSS (groupId correcto) -->
+    <!-- DSS 6.x -->
     <dependency>
       <groupId>eu.europa.ec.joinup.sd-dss</groupId>
       <artifactId>dss-xades</artifactId>
@@ -57,15 +46,30 @@
     </dependency>
     <dependency>
       <groupId>eu.europa.ec.joinup.sd-dss</groupId>
-      <artifactId>dss-utils</artifactId>
+      <artifactId>dss-model</artifactId>
+      <version>${dss.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>eu.europa.ec.joinup.sd-dss</groupId>
+      <artifactId>dss-document</artifactId>
+      <version>${dss.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>eu.europa.ec.joinup.sd-dss</groupId>
+      <artifactId>dss-validation</artifactId>
+      <version>${dss.version}</version>
+    </dependency>
+    <!-- Utilidades (impl Apache Commons) -->
+    <dependency>
+      <groupId>eu.europa.ec.joinup.sd-dss</groupId>
+      <artifactId>dss-utils-apache-commons</artifactId>
       <version>${dss.version}</version>
     </dependency>
 
-    <!-- Bouncy Castle -->
+    <!-- JSON (para respuestas simples si lo necesitas) -->
     <dependency>
-      <groupId>org.bouncycastle</groupId>
-      <artifactId>bcpkix-jdk18on</artifactId>
-      <version>1.78.1</version>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
     </dependency>
   </dependencies>
 
@@ -74,16 +78,16 @@
       <plugin>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
+        <version>${spring-boot.version}</version>
         <configuration>
           <mainClass>com.clientum.signer.SignerApplication</mainClass>
         </configuration>
       </plugin>
       <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
         <version>3.11.0</version>
         <configuration>
-          <release>${java.version}</release>
+          <release>21</release>
         </configuration>
       </plugin>
     </plugins>
