@@ -15,31 +15,84 @@ import javax.xml.transform.stream.StreamResult;
 import java.io.ByteArrayInputStream;
 import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
+import java.security.Key;
+import java.security.KeyStore;
 import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
+import java.util.Base64;
+import java.util.Enumeration;
 
 import org.apache.xml.security.Init;
 import org.apache.xml.security.keys.KeyInfo;
 import org.apache.xml.security.keys.content.X509Data;
 import org.apache.xml.security.signature.XMLSignature;
 import org.apache.xml.security.transforms.Transforms;
-// 👇 Esta es la constante correcta para el digest
 import org.apache.xml.security.algorithms.MessageDigestAlgorithm;
 
 /**
- * Firma XML en modo enveloped con RSA-SHA256 y digest SHA-256 (Santuario).
+ * Firma XML (enveloped) usando Apache Santuario,
+ * algoritmo RSA-SHA256 y digest SHA-256.
  */
 @Service
 public class XmlSigner {
 
     static {
-        // Inicializa la librería de Apache Santuario una sola vez
+        // Inicializa la librería una única vez
         Init.init();
     }
 
     /**
-     * Firma un XML (texto) usando clave privada + certificado X509.
-     * Devuelve el XML firmado (texto).
+     * Atajo que firma un XML cargando el par clave/certificado
+     * desde variables de entorno con un PKCS#12 en Base64.
+     *
+     * Vars usadas:
+     *  - SIGN_P12_BASE64       (obligatoria)
+     *  - SIGN_P12_PASSWORD     (opcional)
+     *  - SIGN_KEY_ALIAS        (opcional; si falta se coge el primero)
+     *  - SIGN_KEY_PASSWORD     (opcional; si falta usa SIGN_P12_PASSWORD)
+     */
+    public String signXml(String xmlPlain) throws Exception {
+        String p12b64 = System.getenv("SIGN_P12_BASE64");
+        if (p12b64 == null || p12b64.isEmpty()) {
+            throw new IllegalStateException("SIGN_P12_BASE64 no está definida.");
+        }
+
+        String ksPassword = System.getenv("SIGN_P12_PASSWORD");
+        char[] ksPwd = ksPassword != null ? ksPassword.toCharArray() : new char[0];
+
+        String keyAlias = System.getenv("SIGN_KEY_ALIAS");
+        String keyPassword = System.getenv("SIGN_KEY_PASSWORD");
+        char[] keyPwd = keyPassword != null ? keyPassword.toCharArray() : ksPwd;
+
+        // Carga el PKCS#12
+        byte[] p12Bytes = Base64.getDecoder().decode(p12b64);
+        KeyStore ks = KeyStore.getInstance("PKCS12");
+        ks.load(new ByteArrayInputStream(p12Bytes), ksPwd);
+
+        // Alias
+        if (keyAlias == null || keyAlias.isEmpty()) {
+            Enumeration<String> aliases = ks.aliases();
+            if (!aliases.hasMoreElements()) {
+                throw new IllegalStateException("El PKCS#12 no contiene alias.");
+            }
+            keyAlias = aliases.nextElement();
+        }
+
+        Key key = ks.getKey(keyAlias, keyPwd);
+        if (key == null || !(key instanceof PrivateKey)) {
+            throw new IllegalStateException("No se pudo obtener la clave privada para el alias: " + keyAlias);
+        }
+
+        X509Certificate cert = (X509Certificate) ks.getCertificate(keyAlias);
+        if (cert == null) {
+            throw new IllegalStateException("No se encontró el certificado para el alias: " + keyAlias);
+        }
+
+        return signEnveloped(xmlPlain, (PrivateKey) key, cert);
+    }
+
+    /**
+     * Firma enveloped usando la clave privada y certificado dados.
      */
     public String signEnveloped(String xmlPlain, PrivateKey privateKey, X509Certificate certificate) throws Exception {
         Document doc = parse(xmlPlain);
@@ -51,7 +104,7 @@ public class XmlSigner {
                 XMLSignature.ALGO_ID_SIGNATURE_RSA_SHA256
         );
 
-        // Inserta el nodo <Signature> como primer hijo del elemento raíz
+        // Inserta <Signature> como primer hijo del root
         Element root = doc.getDocumentElement();
         root.insertBefore(xmlSignature.getElement(), root.getFirstChild());
 
@@ -60,7 +113,7 @@ public class XmlSigner {
         transforms.addTransform(Transforms.TRANSFORM_ENVELOPED_SIGNATURE);
         transforms.addTransform(Transforms.TRANSFORM_C14N_EXCL_OMIT_COMMENTS);
 
-        // Referencia al documento con digest SHA-256 (👈 cambio principal)
+        // Referencia al documento con digest SHA-256 (constante correcta)
         xmlSignature.addDocument(
                 "",
                 transforms,
@@ -72,13 +125,16 @@ public class XmlSigner {
         X509Data x509Data = new X509Data(doc);
         x509Data.addCertificate(certificate);
         keyInfo.add(x509Data);
-        xmlSignature.appendKeyInfo(keyInfo);
+
+        // En Santuario no existe appendKeyInfo; usa setKeyInfo o los helpers addKeyInfo(...)
+        xmlSignature.setKeyInfo(keyInfo);
+        // (opcional) incluir también la public key
         xmlSignature.addKeyInfo(certificate.getPublicKey());
 
-        // Firma
+        // Firma con la clave privada
         xmlSignature.sign(privateKey);
 
-        // Devuelve el XML firmado en texto
+        // XML a String
         return toString(doc);
     }
 
@@ -86,7 +142,7 @@ public class XmlSigner {
 
     private static Document parse(String xml) throws Exception {
         DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
-        dbf.setNamespaceAware(true); // muy importante para XMLDSig
+        dbf.setNamespaceAware(true); // imprescindible para XMLDSig
         DocumentBuilder db = dbf.newDocumentBuilder();
         try (ByteArrayInputStream bais = new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8))) {
             return db.parse(bais);
