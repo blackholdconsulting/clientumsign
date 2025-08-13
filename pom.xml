@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
@@ -6,44 +7,31 @@
   <groupId>com.clientum</groupId>
   <artifactId>signer</artifactId>
   <version>0.0.1</version>
-  <name>Clientum Signer</name>
-  <description>Servicio XAdES-EPES para Clientum</description>
+  <name>clientum-signer</name>
+  <packaging>jar</packaging>
+
   <properties>
     <java.version>21</java.version>
-    <spring-boot.version>3.3.3</spring-boot.version>
-    <dss.version>6.3</dss.version>
+    <!-- DSS probado: 6.2 (estable) -->
+    <dss.version>6.2</dss.version>
   </properties>
 
-  <dependencyManagement>
-    <dependencies>
-      <dependency>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-dependencies</artifactId>
-        <version>${spring-boot.version}</version>
-        <type>pom</type>
-        <scope>import</scope>
-      </dependency>
-    </dependencies>
-  </dependencyManagement>
-
   <dependencies>
-    <!-- Web REST -->
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-web</artifactId>
-    </dependency>
-
-    <!-- DSS 6.x -->
+    <!-- Núcleo de XAdES -->
     <dependency>
       <groupId>eu.europa.ec.joinup.sd-dss</groupId>
       <artifactId>dss-xades</artifactId>
       <version>${dss.version}</version>
     </dependency>
+
+    <!-- Tokens (PKCS#12, etc.) -->
     <dependency>
       <groupId>eu.europa.ec.joinup.sd-dss</groupId>
       <artifactId>dss-token</artifactId>
       <version>${dss.version}</version>
     </dependency>
+
+    <!-- Modelo/Documentos (normalmente vienen transitivos con dss-xades, lo dejamos explícito) -->
     <dependency>
       <groupId>eu.europa.ec.joinup.sd-dss</groupId>
       <artifactId>dss-model</artifactId>
@@ -54,41 +42,60 @@
       <artifactId>dss-document</artifactId>
       <version>${dss.version}</version>
     </dependency>
+
+    <!-- *** FALTABA *** Verificador de certificados necesario para XAdESService -->
     <dependency>
       <groupId>eu.europa.ec.joinup.sd-dss</groupId>
       <artifactId>dss-validation</artifactId>
       <version>${dss.version}</version>
     </dependency>
-    <!-- Utilidades (impl Apache Commons) -->
+
+    <!-- Web: SparkJava (miniservicio HTTP) -->
     <dependency>
-      <groupId>eu.europa.ec.joinup.sd-dss</groupId>
-      <artifactId>dss-utils-apache-commons</artifactId>
-      <version>${dss.version}</version>
+      <groupId>com.sparkjava</groupId>
+      <artifactId>spark-core</artifactId>
+      <version>2.9.4</version>
     </dependency>
 
-    <!-- JSON (para respuestas simples si lo necesitas) -->
+    <!-- JSON -->
     <dependency>
       <groupId>com.fasterxml.jackson.core</groupId>
       <artifactId>jackson-databind</artifactId>
+      <version>2.17.2</version>
     </dependency>
   </dependencies>
 
   <build>
     <plugins>
       <plugin>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-maven-plugin</artifactId>
-        <version>${spring-boot.version}</version>
-        <configuration>
-          <mainClass>com.clientum.signer.SignerApplication</mainClass>
-        </configuration>
-      </plugin>
-      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
         <version>3.11.0</version>
         <configuration>
-          <release>21</release>
+          <source>${java.version}</source>
+          <target>${java.version}</target>
+          <release>${java.version}</release>
         </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>3.5.1</version>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals><goal>shade</goal></goals>
+            <configuration>
+              <createDependencyReducedPom>false</createDependencyReducedPom>
+              <transformers>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                  <mainClass>com.clientum.signer.SignController</mainClass>
+                </transformer>
+              </transformers>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>
