@@ -1,22 +1,27 @@
 server:
-  port: 10000
+  port: ${PORT:10000}
 
 management:
   endpoints:
     web:
+      base-path: /actuator
       exposure:
-        include: health
+        include: health,info
   endpoint:
     health:
-      show-details: never
+      show-details: when_authorized
+      probes:
+        enabled: true
 
 springdoc:
-  swagger-ui:
-    path: /swagger-ui.html
   api-docs:
     path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui
+    operationsSorter: method
+    tagsSorter: alpha
 
-# Seguridad
-SIGN_REQUIRE_API_KEY: true
-SIGN_API_KEY_HEADER: x-api-key
-# En Render: define SIGN_API_KEYS como variable de entorno (p.ej. "k1,k2")
+info:
+  app:
+    name: Clientum Signer
+    description: Servicio de firma XML para Clientum
