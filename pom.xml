@@ -27,17 +27,10 @@
       <artifactId>spring-boot-starter-web</artifactId>
     </dependency>
 
-    <!-- DSS: documentos -->
+    <!-- DSS: documentos (InMemoryDocument, etc.) -->
     <dependency>
       <groupId>eu.europa.ec.joinup.sd-dss</groupId>
       <artifactId>dss-document</artifactId>
-      <version>${dss.version}</version>
-    </dependency>
-
-    <!-- DSS: XAdES -->
-    <dependency>
-      <groupId>eu.europa.ec.joinup.sd-dss</groupId>
-      <artifactId>dss-xades</artifactId>
       <version>${dss.version}</version>
     </dependency>
 
@@ -48,7 +41,7 @@
       <version>${dss.version}</version>
     </dependency>
 
-    <!-- DSS: tokens (PKCS#12, etc.) -->
+    <!-- DSS: tokens por si luego firmamos con .p12 -->
     <dependency>
       <groupId>eu.europa.ec.joinup.sd-dss</groupId>
       <artifactId>dss-token</artifactId>
