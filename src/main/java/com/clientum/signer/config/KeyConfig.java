@@ -1,72 +1,57 @@
 package com.clientum.signer.config;
 
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Condition;
+import org.springframework.context.annotation.ConditionContext;
+import org.springframework.context.annotation.Conditional;
+import org.springframework.core.env.Environment;
+import org.springframework.core.type.AnnotatedTypeMetadata;
 
-import java.io.ByteArrayInputStream;
-import java.io.File;
 import java.io.FileInputStream;
+import java.io.InputStream;
 import java.security.KeyStore;
-import java.security.PrivateKey;
-import java.security.cert.Certificate;
 import java.util.Base64;
-import java.util.Enumeration;
 
 @Configuration
 public class KeyConfig {
 
-  /**
-   * Bean OPCIONAL: solo se crea si hay un keystore global configurado por ENV.
-   * Así el servicio arranca sin problemas en modo multiusuario (p12 por petición).
-   */
+  /** Solo crea el bean si hay keystore por env; si no, NO crashea. */
   @Bean
-  @ConditionalOnExpression("('${SIGN_KEYSTORE_BASE64:}' != '') or ('${SIGN_KEYSTORE_PATH:}' != '')")
-  public KeyStore.PrivateKeyEntry signerKeyEntry(
-      @Value("${SIGN_KEYSTORE_BASE64:}") String ksBase64,
-      @Value("${SIGN_KEYSTORE_PATH:}")  String ksPath,
-      @Value("${SIGN_KEYSTORE_PASSWORD:}") String storePassword,
-      @Value("${SIGN_KEY_ALIAS:}") String alias,
-      @Value("${SIGN_KEY_PASSWORD:}") String keyPassword
-  ) throws Exception {
+  @Conditional(SignerKeyEntryCondition.class)
+  public KeyStore.PrivateKeyEntry signerKeyEntry(Environment env) throws Exception {
+    String b64 = env.getProperty("SIGN_KEYSTORE_BASE64");
+    String path = env.getProperty("SIGN_KEYSTORE_PATH");
+    String pwd  = env.getProperty("SIGN_KEYSTORE_PASSWORD", "");
 
-    if (storePassword == null || storePassword.isBlank()) {
-      throw new IllegalStateException("Falta SIGN_KEYSTORE_PASSWORD para el keystore global");
-    }
-
-    char[] sp = storePassword.toCharArray();
-    char[] kp = (keyPassword != null && !keyPassword.isBlank())
-        ? keyPassword.toCharArray() : sp;
-
+    char[] pass = pwd.toCharArray();
     KeyStore ks = KeyStore.getInstance("PKCS12");
 
-    if (ksBase64 != null && !ksBase64.isBlank()) {
-      byte[] bytes = Base64.getDecoder().decode(ksBase64.replaceAll("\\s", ""));
-      ks.load(new ByteArrayInputStream(bytes), sp);
+    if (b64 != null && !b64.isBlank()) {
+      byte[] bytes = Base64.getDecoder().decode(b64);
+      try (InputStream in = new java.io.ByteArrayInputStream(bytes)) {
+        ks.load(in, pass);
+      }
     } else {
-      File f = new File(ksPath);
-      try (FileInputStream fis = new FileInputStream(f)) {
-        ks.load(fis, sp);
+      try (InputStream in = new FileInputStream(path)) {
+        ks.load(in, pass);
       }
     }
 
-    String effectiveAlias = alias;
-    if (effectiveAlias == null || effectiveAlias.isBlank() || !ks.containsAlias(effectiveAlias)) {
-      Enumeration<String> aliases = ks.aliases();
-      if (!aliases.hasMoreElements()) {
-        throw new IllegalStateException("El PKCS12 no contiene alias");
-      }
-      effectiveAlias = aliases.nextElement();
-    }
+    String alias = ks.aliases().nextElement();
+    KeyStore.PrivateKeyEntry entry = (KeyStore.PrivateKeyEntry)
+        ks.getEntry(alias, new KeyStore.PasswordProtection(pass));
+    return entry;
+  }
 
-    PrivateKey pk = (PrivateKey) ks.getKey(effectiveAlias, kp);
-    Certificate[] chain = ks.getCertificateChain(effectiveAlias);
-    if (chain == null || chain.length == 0) {
-      Certificate c = ks.getCertificate(effectiveAlias);
-      if (c != null) chain = new Certificate[]{c};
+  /** Condición: hay SIGN_KEYSTORE_BASE64 o SIGN_KEYSTORE_PATH. */
+  public static class SignerKeyEntryCondition implements Condition {
+    @Override
+    public boolean matches(ConditionContext ctx, AnnotatedTypeMetadata md) {
+      Environment env = ctx.getEnvironment();
+      String b64 = env.getProperty("SIGN_KEYSTORE_BASE64");
+      String path = env.getProperty("SIGN_KEYSTORE_PATH");
+      return (b64 != null && !b64.isBlank()) || (path != null && !path.isBlank());
     }
-
-    return new KeyStore.PrivateKeyEntry(pk, chain);
   }
 }
