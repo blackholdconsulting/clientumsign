@@ -12,9 +12,22 @@
   <properties>
     <java.version>21</java.version>
     <spring-boot.version>3.3.3</spring-boot.version>
-    <dss.version>6.2.0</dss.version>
+    <!-- DSS estable en Central -->
+    <dss.version>5.12.2</dss.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   </properties>
+
+  <!-- Repos: Central + OSSRH como fallback -->
+  <repositories>
+    <repository>
+      <id>central</id>
+      <url>https://repo1.maven.org/maven2</url>
+    </repository>
+    <repository>
+      <id>ossrh-releases</id>
+      <url>https://oss.sonatype.org/content/repositories/releases/</url>
+    </repository>
+  </repositories>
 
   <dependencyManagement>
     <dependencies>
@@ -35,7 +48,7 @@
       <artifactId>spring-boot-starter-web</artifactId>
     </dependency>
 
-    <!-- DSS (EU) para firmas XAdES -->
+    <!-- DSS (EU) para XAdES -->
     <dependency>
       <groupId>eu.europa.esig.dss</groupId>
       <artifactId>dss-xades</artifactId>
