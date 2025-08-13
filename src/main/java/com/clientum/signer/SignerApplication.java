@@ -5,7 +5,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
 public class SignerApplication {
-    public static void main(String[] args) {
-        SpringApplication.run(SignerApplication.class, args);
-    }
+  public static void main(String[] args) {
+    SpringApplication.run(SignerApplication.class, args);
+  }
 }
