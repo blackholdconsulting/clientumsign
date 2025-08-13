@@ -1,111 +1,121 @@
 package com.clientum.signer;
 
-import static spark.Spark.*;
-
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
-import java.io.ByteArrayInputStream;
-import java.nio.charset.StandardCharsets;
-import java.security.KeyStore.PasswordProtection;
-import java.util.Base64;
-import java.util.List;
+import com.clientum.signer.dto.SignRequest;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
 
 import eu.europa.esig.dss.enumerations.DigestAlgorithm;
+import eu.europa.esig.dss.enumerations.SignatureLevel;
+import eu.europa.esig.dss.enumerations.SignaturePackaging;
 import eu.europa.esig.dss.model.DSSDocument;
 import eu.europa.esig.dss.model.InMemoryDocument;
-import eu.europa.esig.dss.model.ToBeSigned;
+import eu.europa.esig.dss.model.Policy;
 import eu.europa.esig.dss.model.SignatureValue;
-
+import eu.europa.esig.dss.model.ToBeSigned;
 import eu.europa.esig.dss.token.DSSPrivateKeyEntry;
 import eu.europa.esig.dss.token.Pkcs12SignatureToken;
-
-import eu.europa.esig.dss.validation.CommonCertificateVerifier; // <- aquí
 import eu.europa.esig.dss.validation.CertificateVerifier;
-
-import eu.europa.esig.dss.xades.XAdESSignatureParameters;
+import eu.europa.esig.dss.validation.CommonCertificateVerifier;
 import eu.europa.esig.dss.xades.XAdESService;
+import eu.europa.esig.dss.xades.XAdESSignatureParameters;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.security.KeyStore;
+import java.util.Base64;
+
+@RestController
 public class SignController {
 
-  private static final ObjectMapper MAPPER = new ObjectMapper();
-
-  public static void main(String[] args) {
-    port(getPort());
-
-    // Healthcheck
-    get("/health", (req, res) -> "OK");
-
-    // Firma XAdES
-    post("/xades-epes", (req, res) -> {
-      try {
-        JsonNode body = MAPPER.readTree(req.body());
-
-        // 1) XML a firmar
-        String xmlB64 = body.path("xmlBase64").asText(null);
-        String xmlText = body.path("xml").asText(null);
-        byte[] xmlBytes;
-        if (xmlB64 != null && !xmlB64.isEmpty()) {
-          xmlBytes = Base64.getDecoder().decode(xmlB64);
-        } else if (xmlText != null) {
-          xmlBytes = xmlText.getBytes(StandardCharsets.UTF_8);
-        } else {
-          halt(400, "Falta xmlBase64 o xml");
-          return "";
-        }
-        DSSDocument toSign = new InMemoryDocument(xmlBytes, "factura.xml");
-
-        // 2) Certificado
-        String p12B64 = body.path("p12Base64").asText();
-        String password = body.path("password").asText("");
-        if (p12B64 == null || p12B64.isEmpty()) {
-          halt(400, "Falta p12Base64");
-          return "";
-        }
-        byte[] p12Bytes = Base64.getDecoder().decode(p12B64);
-
-        try (Pkcs12SignatureToken token =
-                 new Pkcs12SignatureToken(
-                   new ByteArrayInputStream(p12Bytes),
-                   new PasswordProtection(password.toCharArray()))) {
-
-          List<DSSPrivateKeyEntry> keys = token.getKeys();
-          if (keys.isEmpty()) {
-            halt(400, "El P12 no contiene claves de firma");
-            return "";
-          }
-          DSSPrivateKeyEntry key = keys.get(0);
-
-          // 3) Parámetros XAdES (BES)
-          XAdESSignatureParameters params = new XAdESSignatureParameters();
-          params.setSigningCertificate(key.getCertificate());
-          params.setCertificateChain(key.getCertificateChain());
-          params.setDigestAlgorithm(DigestAlgorithm.SHA256);
-          // Si luego quieres EPES, aquí se añade la política.
-
-          // 4) Servicio XAdES con verificador
-          CertificateVerifier verifier = new CommonCertificateVerifier();
-          XAdESService service = new XAdESService(verifier);
-
-          // 5) Firmar
-          ToBeSigned dataToSign = service.getDataToSign(toSign, params);
-          // ******* orden correcto *******
-          SignatureValue sigValue = token.sign(dataToSign, params.getDigestAlgorithm(), key);
-          DSSDocument signed = service.signDocument(toSign, params, sigValue);
-
-          String signedB64 = Base64.getEncoder().encodeToString(signed.openStream().readAllBytes());
-          res.type("application/json");
-          return "{\"xmlFirmadoBase64\":\"" + signedB64 + "\"}";
-        }
-      } catch (Exception e) {
-        res.status(500);
-        return "{\"error\":\"" + e.getMessage().replace("\"","'") + "\"}";
-      }
-    });
+  @GetMapping("/healthz")
+  public ResponseEntity<String> health() {
+    return ResponseEntity.ok("ok");
   }
 
-  private static int getPort() {
-    String p = System.getenv("PORT");
-    return (p == null || p.isEmpty()) ? 8080 : Integer.parseInt(p);
+  @PostMapping(value = "/xades-epes", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_XML_VALUE)
+  public ResponseEntity<String> sign(@RequestBody SignRequest req) throws Exception {
+    if (req == null || isBlank(req.xml) || isBlank(req.p12) || isBlank(req.password)) {
+      return ResponseEntity.badRequest().body("<error>xml, p12 y password son obligatorios</error>");
+    }
+
+    // 1) Carga documento XML (acepta Base64 o texto plano)
+    byte[] xmlBytes = decodeMaybeBase64(req.xml);
+    DSSDocument document = new InMemoryDocument(xmlBytes, "input.xml", "application/xml");
+
+    // 2) Prepara parámetros XAdES
+    XAdESSignatureParameters params = new XAdESSignatureParameters();
+    params.setSignatureLevel(parseLevel(req.level)); // por defecto: BASELINE_B
+    params.setSignaturePackaging(parsePackaging(req.packaging)); // por defecto: ENVELOPED
+    params.setDigestAlgorithm(parseDigest(req.policyDigestAlgorithm)); // SHA256
+
+    // EPES = Baseline + política explícita
+    if (!isBlank(req.policyId) && !isBlank(req.policyHashBase64)) {
+      Policy policy = new Policy();
+      policy.setId(req.policyId);
+      policy.setDigestAlgorithm(parseDigest(req.policyDigestAlgorithm));
+      policy.setDigestValue(Base64.getDecoder().decode(req.policyHashBase64));
+      params.bLevel().setSignaturePolicy(policy);
+    }
+
+    // 3) Verificador y servicio
+    CertificateVerifier verifier = new CommonCertificateVerifier();
+    XAdESService service = new XAdESService(verifier);
+
+    // 4) Token PKCS#12
+    byte[] p12Bytes = Base64.getDecoder().decode(req.p12);
+    KeyStore.PasswordProtection prot = new KeyStore.PasswordProtection(req.password.toCharArray());
+    try (Pkcs12SignatureToken token = new Pkcs12SignatureToken(new ByteArrayInputStream(p12Bytes), prot)) {
+
+      // 5) Datos a firmar
+      ToBeSigned dataToSign = service.getDataToSign(document, params);
+
+      // 6) Clave privada (primer alias)
+      DSSPrivateKeyEntry key = token.getKeys().get(0);
+
+      // 7) Firma criptográfica
+      SignatureValue sigValue = token.sign(dataToSign, params.getDigestAlgorithm(), key);
+
+      // 8) Ensambla firma XAdES
+      DSSDocument signed = service.signDocument(document, params, sigValue);
+
+      // 9) Devuelve XML firmado
+      ByteArrayOutputStream baos = new ByteArrayOutputStream();
+      signed.writeTo(baos);
+      String xmlSigned = baos.toString(StandardCharsets.UTF_8);
+      return ResponseEntity.ok().contentType(MediaType.APPLICATION_XML).body(xmlSigned);
+    }
+  }
+
+  // -------- Helpers --------
+  private static boolean isBlank(String s) { return s == null || s.trim().isEmpty(); }
+
+  private static byte[] decodeMaybeBase64(String s) {
+    try {
+      return Base64.getDecoder().decode(s);
+    } catch (IllegalArgumentException ignored) {
+      return s.getBytes(StandardCharsets.UTF_8);
+    }
+  }
+
+  private static SignatureLevel parseLevel(String level) {
+    if ("XAdES_BASELINE_LTA".equalsIgnoreCase(level)) return SignatureLevel.XAdES_BASELINE_LTA;
+    if ("XAdES_BASELINE_LT".equalsIgnoreCase(level))  return SignatureLevel.XAdES_BASELINE_LT;
+    if ("XAdES_BASELINE_T".equalsIgnoreCase(level))   return SignatureLevel.XAdES_BASELINE_T;
+    return SignatureLevel.XAdES_BASELINE_B;
+  }
+
+  private static SignaturePackaging parsePackaging(String p) {
+    if ("DETACHED".equalsIgnoreCase(p))   return SignaturePackaging.DETACHED;
+    if ("ENVELOPING".equalsIgnoreCase(p)) return SignaturePackaging.ENVELOPING;
+    return SignaturePackaging.ENVELOPED;
+  }
+
+  private static DigestAlgorithm parseDigest(String d) {
+    if ("SHA512".equalsIgnoreCase(d)) return DigestAlgorithm.SHA512;
+    if ("SHA384".equalsIgnoreCase(d)) return DigestAlgorithm.SHA384;
+    if ("SHA1".equalsIgnoreCase(d))   return DigestAlgorithm.SHA1;
+    return DigestAlgorithm.SHA256;
   }
 }
