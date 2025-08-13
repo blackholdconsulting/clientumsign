@@ -12,26 +12,22 @@
 
   <properties>
     <java.version>21</java.version>
-    <!-- DSS probado: 6.2 (estable) -->
+    <!-- Versión DSS estable -->
     <dss.version>6.2</dss.version>
   </properties>
 
   <dependencies>
-    <!-- Núcleo de XAdES -->
+    <!-- DSS (groupId correcto en Maven Central) -->
     <dependency>
       <groupId>eu.europa.ec.joinup.sd-dss</groupId>
       <artifactId>dss-xades</artifactId>
       <version>${dss.version}</version>
     </dependency>
-
-    <!-- Tokens (PKCS#12, etc.) -->
     <dependency>
       <groupId>eu.europa.ec.joinup.sd-dss</groupId>
       <artifactId>dss-token</artifactId>
       <version>${dss.version}</version>
     </dependency>
-
-    <!-- Modelo/Documentos (normalmente vienen transitivos con dss-xades, lo dejamos explícito) -->
     <dependency>
       <groupId>eu.europa.ec.joinup.sd-dss</groupId>
       <artifactId>dss-model</artifactId>
@@ -42,15 +38,13 @@
       <artifactId>dss-document</artifactId>
       <version>${dss.version}</version>
     </dependency>
-
-    <!-- *** FALTABA *** Verificador de certificados necesario para XAdESService -->
     <dependency>
       <groupId>eu.europa.ec.joinup.sd-dss</groupId>
       <artifactId>dss-validation</artifactId>
       <version>${dss.version}</version>
     </dependency>
 
-    <!-- Web: SparkJava (miniservicio HTTP) -->
+    <!-- Micro API HTTP -->
     <dependency>
       <groupId>com.sparkjava</groupId>
       <artifactId>spark-core</artifactId>
