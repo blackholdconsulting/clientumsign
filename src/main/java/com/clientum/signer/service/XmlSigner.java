@@ -2,144 +2,91 @@ package com.clientum.signer.service;
 
 import org.springframework.stereotype.Service;
 
-import org.w3c.dom.Document;
-import org.w3c.dom.Element;
+import javax.xml.crypto.dsig.*;
+import javax.xml.crypto.dsig.dom.DOMSignContext;
+import javax.xml.crypto.dsig.keyinfo.*;
+import javax.xml.crypto.dsig.spec.C14NMethodParameterSpec;
+import javax.xml.crypto.dsig.spec.TransformParameterSpec;
 
-import javax.xml.parsers.DocumentBuilder;
+import org.w3c.dom.Document;
+import org.xml.sax.InputSource;
+
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.transform.Transformer;
 import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
 
-import java.io.ByteArrayInputStream;
+import java.io.StringReader;
 import java.io.StringWriter;
-import java.nio.charset.StandardCharsets;
-import java.security.Key;
 import java.security.KeyStore;
 import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
-import java.util.Base64;
-import java.util.Enumeration;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
-import org.apache.xml.security.Init;
-import org.apache.xml.security.signature.XMLSignature;
-import org.apache.xml.security.transforms.Transforms;
-import org.apache.xml.security.algorithms.MessageDigestAlgorithm;
-
-/**
- * Firma XML (enveloped) usando Apache Santuario,
- * algoritmo RSA-SHA256 y digest SHA-256.
- *
- * Variables de entorno:
- *  - SIGN_P12_BASE64    (obligatoria) PKCS#12 en Base64
- *  - SIGN_P12_PASSWORD  (opcional)   password del keystore
- *  - SIGN_KEY_ALIAS     (opcional)   alias; si falta, coge el primero
- *  - SIGN_KEY_PASSWORD  (opcional)   si falta, usa SIGN_P12_PASSWORD
- */
 @Service
 public class XmlSigner {
 
-    static {
-        // Inicializa la librería una única vez
-        Init.init();
+  public String signXmlWithKey(String xml, KeyStore.PrivateKeyEntry entry) throws Exception {
+    Document doc = parseXml(xml);
+
+    PrivateKey privateKey = entry.getPrivateKey();
+
+    XMLSignatureFactory fac = XMLSignatureFactory.getInstance("DOM");
+
+    // Referencia al documento entero con Transform ENVELOPED
+    Reference ref = fac.newReference(
+        "",
+        fac.newDigestMethod(DigestMethod.SHA256, null),
+        Collections.singletonList(fac.newTransform(Transform.ENVELOPED, (TransformParameterSpec) null)),
+        null,
+        null
+    );
+
+    // SignedInfo: Canonicalización + RSA-SHA256
+    SignedInfo si = fac.newSignedInfo(
+        fac.newCanonicalizationMethod(CanonicalizationMethod.INCLUSIVE, (C14NMethodParameterSpec) null),
+        fac.newSignatureMethod(SignatureMethod.RSA_SHA256, null),
+        Collections.singletonList(ref)
+    );
+
+    // KeyInfo con el certificado del usuario
+    KeyInfoFactory kif = fac.getKeyInfoFactory();
+    List<Object> x509Content = new ArrayList<>();
+    if (entry.getCertificate() instanceof X509Certificate x509) {
+      x509Content.add(x509.getSubjectX500Principal().getName());
+      x509Content.add(x509);
     }
-
-    /** Atajo: firma tomando la clave/certificado de variables de entorno. */
-    public String signXml(String xmlPlain) throws Exception {
-        String p12b64 = System.getenv("SIGN_P12_BASE64");
-        if (p12b64 == null || p12b64.isEmpty()) {
-            throw new IllegalStateException("SIGN_P12_BASE64 no está definida.");
-        }
-
-        String ksPassword = System.getenv("SIGN_P12_PASSWORD");
-        char[] ksPwd = ksPassword != null ? ksPassword.toCharArray() : new char[0];
-
-        String keyAlias = System.getenv("SIGN_KEY_ALIAS");
-        String keyPassword = System.getenv("SIGN_KEY_PASSWORD");
-        char[] keyPwd = keyPassword != null ? keyPassword.toCharArray() : ksPwd;
-
-        // Carga el PKCS#12
-        byte[] p12Bytes = Base64.getDecoder().decode(p12b64);
-        KeyStore ks = KeyStore.getInstance("PKCS12");
-        ks.load(new ByteArrayInputStream(p12Bytes), ksPwd);
-
-        // Alias
-        if (keyAlias == null || keyAlias.isEmpty()) {
-            Enumeration<String> aliases = ks.aliases();
-            if (!aliases.hasMoreElements()) {
-                throw new IllegalStateException("El PKCS#12 no contiene alias.");
-            }
-            keyAlias = aliases.nextElement();
-        }
-
-        Key key = ks.getKey(keyAlias, keyPwd);
-        if (!(key instanceof PrivateKey)) {
-            throw new IllegalStateException("No se pudo obtener la clave privada para el alias: " + keyAlias);
-        }
-
-        X509Certificate cert = (X509Certificate) ks.getCertificate(keyAlias);
-        if (cert == null) {
-            throw new IllegalStateException("No se encontró el certificado para el alias: " + keyAlias);
-        }
-
-        return signEnveloped(xmlPlain, (PrivateKey) key, cert);
+    // Añade el resto de la cadena si existe
+    if (entry.getCertificateChain() != null) {
+      for (var c : entry.getCertificateChain()) {
+        if (c instanceof X509Certificate x) x509Content.add(x);
+      }
     }
+    X509Data xd = kif.newX509Data(x509Content);
+    KeyInfo ki = kif.newKeyInfo(Collections.singletonList(xd));
 
-    /** Firma enveloped usando la clave privada y certificado dados. */
-    public String signEnveloped(String xmlPlain, PrivateKey privateKey, X509Certificate certificate) throws Exception {
-        Document doc = parse(xmlPlain);
+    // Firmar
+    DOMSignContext dsc = new DOMSignContext(privateKey, doc.getDocumentElement());
+    XMLSignature signature = fac.newXMLSignature(si, ki);
+    signature.sign(dsc);
 
-        // Crea la firma RSA-SHA256
-        XMLSignature xmlSignature = new XMLSignature(
-                doc,
-                "",
-                XMLSignature.ALGO_ID_SIGNATURE_RSA_SHA256
-        );
+    return toString(doc);
+  }
 
-        // Inserta <Signature> como primer hijo del root
-        Element root = doc.getDocumentElement();
-        root.insertBefore(xmlSignature.getElement(), root.getFirstChild());
+  private static Document parseXml(String xml) throws Exception {
+    DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+    dbf.setNamespaceAware(true);
+    return dbf.newDocumentBuilder().parse(new InputSource(new StringReader(xml)));
+  }
 
-        // Transforms: enveloped + canonicalización
-        Transforms transforms = new Transforms(doc);
-        transforms.addTransform(Transforms.TRANSFORM_ENVELOPED_SIGNATURE);
-        transforms.addTransform(Transforms.TRANSFORM_C14N_EXCL_OMIT_COMMENTS);
-
-        // Referencia al documento con digest SHA-256
-        xmlSignature.addDocument(
-                "",
-                transforms,
-                MessageDigestAlgorithm.ALGO_ID_DIGEST_SHA256
-        );
-
-        // KeyInfo: en esta versión se añaden vía helpers del propio XMLSignature
-        xmlSignature.addKeyInfo(certificate);
-        xmlSignature.addKeyInfo(certificate.getPublicKey());
-
-        // Firma con la clave privada
-        xmlSignature.sign(privateKey);
-
-        // XML a String
-        return toString(doc);
-    }
-
-    // -------------------- helpers --------------------
-
-    private static Document parse(String xml) throws Exception {
-        DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
-        dbf.setNamespaceAware(true); // imprescindible para XMLDSig
-        DocumentBuilder db = dbf.newDocumentBuilder();
-        try (ByteArrayInputStream bais = new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8))) {
-            return db.parse(bais);
-        }
-    }
-
-    private static String toString(Document doc) throws Exception {
-        TransformerFactory tf = TransformerFactory.newInstance();
-        Transformer transformer = tf.newTransformer();
-        StringWriter sw = new StringWriter();
-        transformer.transform(new DOMSource(doc), new StreamResult(sw));
-        return sw.toString();
-    }
+  private static String toString(Document doc) throws Exception {
+    TransformerFactory tf = TransformerFactory.newInstance();
+    Transformer t = tf.newTransformer();
+    StringWriter sw = new StringWriter();
+    t.transform(new DOMSource(doc), new StreamResult(sw));
+    return sw.toString();
+  }
 }
