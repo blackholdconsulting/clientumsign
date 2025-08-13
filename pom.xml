@@ -22,13 +22,12 @@
   </properties>
 
   <dependencies>
-    <!-- Web -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-web</artifactId>
     </dependency>
 
-    <!-- DSS: documentos / modelos -->
+    <!-- DSS: documentos -->
     <dependency>
       <groupId>eu.europa.ec.joinup.sd-dss</groupId>
       <artifactId>dss-document</artifactId>
@@ -42,7 +41,7 @@
       <version>${dss.version}</version>
     </dependency>
 
-    <!-- DSS: validación (CertificateVerifier, etc.) -->
+    <!-- DSS: validación (CertificateVerifier / CommonCertificateVerifier) -->
     <dependency>
       <groupId>eu.europa.ec.joinup.sd-dss</groupId>
       <artifactId>dss-validation</artifactId>
@@ -54,12 +53,6 @@
       <groupId>eu.europa.ec.joinup.sd-dss</groupId>
       <artifactId>dss-token</artifactId>
       <version>${dss.version}</version>
-    </dependency>
-
-    <!-- Opcional pero útil para devolver bytes como respuesta -->
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter</artifactId>
     </dependency>
   </dependencies>
 
