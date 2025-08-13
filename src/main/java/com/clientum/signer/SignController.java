@@ -1,13 +1,10 @@
 package com.clientum.signer;
 
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
-import eu.europa.esig.dss.model.InMemoryDocument;
-
-import java.nio.charset.StandardCharsets;
-import java.util.LinkedHashMap;
+import java.time.Instant;
 import java.util.Map;
 
 @RestController
@@ -16,19 +13,20 @@ public class SignController {
 
     @GetMapping("/smoke")
     public Map<String, Object> smoke() {
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("status", "ok");
+        return Map.of(
+                "status", "ok",
+                "service", "clientumsign",
+                "ts", Instant.now().toString()
+        );
+    }
 
-        // Probar que la librería DSS está presente creando un InMemoryDocument
-        try {
-            byte[] xml = "<test/>".getBytes(StandardCharsets.UTF_8);
-            InMemoryDocument doc = new InMemoryDocument(xml, "test.xml");
-            out.put("dss", "ok");
-            out.put("docClass", doc.getClass().getName());
-        } catch (Throwable t) {
-            out.put("dss", "error: " + t.getClass().getSimpleName() + " - " + t.getMessage());
-        }
-
-        return out;
+    // Stub para ir probando subida de archivos (aquí luego metemos la firma real)
+    @PostMapping(path = "/sign", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public Map<String, Object> signStub(@RequestPart("file") MultipartFile file) throws Exception {
+        return Map.of(
+                "received", file.getOriginalFilename(),
+                "size", file.getSize(),
+                "message", "stub: firma aún no implementada"
+        );
     }
 }
