@@ -1,25 +1,28 @@
 package com.clientum.signer.api.dto;
 
-public class SignXmlResponse {
+/**
+ * Request para /api/sign/xml
+ * Puedes enviar xml (texto) o xmlBase64.
+ * Para multiusuario: p12Base64 + p12Password.
+ */
+public class SignXmlRequest {
 
-  private String signedXmlBase64;
-  private String algorithm;
-  private long ts;
+  private String xml;
+  private String xmlBase64;
+  private String p12Base64;
+  private String p12Password;
 
-  public SignXmlResponse() { }
+  public SignXmlRequest() { }
 
-  public SignXmlResponse(String signedXmlBase64, String algorithm) {
-    this.signedXmlBase64 = signedXmlBase64;
-    this.algorithm = algorithm;
-    this.ts = System.currentTimeMillis();
-  }
+  public String getXml() { return xml; }
+  public void setXml(String xml) { this.xml = xml; }
 
-  public String getSignedXmlBase64() { return signedXmlBase64; }
-  public void setSignedXmlBase64(String signedXmlBase64) { this.signedXmlBase64 = signedXmlBase64; }
+  public String getXmlBase64() { return xmlBase64; }
+  public void setXmlBase64(String xmlBase64) { this.xmlBase64 = xmlBase64; }
 
-  public String getAlgorithm() { return algorithm; }
-  public void setAlgorithm(String algorithm) { this.algorithm = algorithm; }
+  public String getP12Base64() { return p12Base64; }
+  public void setP12Base64(String p12Base64) { this.p12Base64 = p12Base64; }
 
-  public long getTs() { return ts; }
-  public void setTs(long ts) { this.ts = ts; }
+  public String getP12Password() { return p12Password; }
+  public void setP12Password(String p12Password) { this.p12Password = p12Password; }
 }
