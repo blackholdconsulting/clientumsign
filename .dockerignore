@@ -1,1 +1,5 @@
-
+target/
+.git
+.github
+.idea
+*.iml
