@@ -4,51 +4,67 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
 
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.security.core.context.SecurityContextHolder;
-
 public class ApiKeyFilter extends OncePerRequestFilter {
-    private final String headerName;
-    private final String expectedValue;
 
-    public ApiKeyFilter(String headerName, String expectedValue) {
-        this.headerName = headerName;
-        this.expectedValue = expectedValue;
+  private final String expectedKey;
+
+  // Rutas que nunca se filtran (públicas)
+  private final List<AntPathRequestMatcher> publicMatchers = List.of(
+      new AntPathRequestMatcher("/actuator/**"),
+      new AntPathRequestMatcher("/v3/api-docs/**"),
+      new AntPathRequestMatcher("/swagger-ui/**"),
+      new AntPathRequestMatcher("/swagger-ui.html")
+  );
+
+  public ApiKeyFilter(String expectedKey) {
+    this.expectedKey = expectedKey;
+  }
+
+  @Override
+  protected boolean shouldNotFilter(HttpServletRequest request) {
+    // No filtrar si coincide con rutas públicas
+    for (var m : publicMatchers) {
+      if (m.matches(request)) return true;
+    }
+    // Solo filtrar cuando se accede a /api/sign/**
+    return !new AntPathRequestMatcher("/api/sign/**").matches(request);
+  }
+
+  @Override
+  protected void doFilterInternal(HttpServletRequest request,
+                                  HttpServletResponse response,
+                                  FilterChain filterChain) throws ServletException, IOException {
+
+    // Intenta por X-API-Key
+    String key = request.getHeader("X-API-Key");
+
+    // Si no vino, intenta con Authorization: Bearer <token>
+    if (key == null || key.isBlank()) {
+      String auth = request.getHeader("Authorization");
+      if (auth != null && auth.startsWith("Bearer ")) {
+        key = auth.substring("Bearer ".length()).trim();
+      }
     }
 
-    @Override
-    protected void doFilterInternal(
-            HttpServletRequest request,
-            HttpServletResponse response,
-            FilterChain filterChain) throws ServletException, IOException {
-
-        String apiKey = request.getHeader(headerName);
-
-        if (apiKey != null && apiKey.equals(expectedValue)) {
-            // Autenticar la request con un token simple
-            var auth = new UsernamePasswordAuthenticationToken(
-                    "api-key", apiKey,
-                    List.of(new SimpleGrantedAuthority("ROLE_API")));
-            SecurityContextHolder.getContext().setAuthentication(auth);
-        } else if (requiresAuth(request)) {
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.setContentType("application/json");
-            response.getWriter().write("{\"error\":\"invalid or missing X-API-KEY\"}");
-            return;
-        }
-
-        filterChain.doFilter(request, response);
+    if (key != null && !key.isBlank() && key.equals(expectedKey)) {
+      // Autenticación "ficticia" para pasar el security chain
+      var authToken = new UsernamePasswordAuthenticationToken("api-key-user", null, List.of());
+      SecurityContextHolder.getContext().setAuthentication(authToken);
+      filterChain.doFilter(request, response);
+      return;
     }
 
-    private boolean requiresAuth(HttpServletRequest request) {
-        String path = request.getRequestURI();
-        // Protegemos todo lo bajo /api/**
-        return path.startsWith("/api/");
-    }
+    // 401 si la API key es inválida o ausente
+    response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+    response.setContentType("application/json");
+    response.getWriter().write("{\"error\":\"invalid_api_key\"}");
+  }
 }
