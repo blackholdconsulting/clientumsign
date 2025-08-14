@@ -1,32 +1,40 @@
 package com.clientum.signer.security;
 
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 
 @Configuration
+@EnableWebSecurity
 public class SecurityConfig {
 
   @Bean
-  SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+  SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
     http
-      .csrf(csrf -> csrf.disable())
+      .csrf(AbstractHttpConfigurer::disable)
       .cors(Customizer.withDefaults())
-      .headers(h -> h.frameOptions(f -> f.sameOrigin())) // útil para swagger-ui en algunos hosts
+      .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+      .httpBasic(AbstractHttpConfigurer::disable)
+      .formLogin(AbstractHttpConfigurer::disable) // <- SIN formulario de login
       .authorizeHttpRequests(auth -> auth
         .requestMatchers(
-          "/actuator/**",
-          "/swagger-ui/**", "/swagger-ui.html",
-          "/v3/api-docs/**",
-          "/api/**",         // dejamos pasar; el filtro de API Key controla acceso
-          "/error"
+            "/", "/login",                        // <- permitimos para redirigir/ocultar
+            "/actuator/health", "/actuator/info",
+            "/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**",
+            "/api/sign/**"
         ).permitAll()
-        .anyRequest().denyAll()
+        .anyRequest().authenticated()
       )
-      .formLogin(f -> f.disable())
-      .httpBasic(b -> b.disable());
+      .exceptionHandling(e -> e
+        .authenticationEntryPoint((req, res, ex) ->
+          res.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Unauthorized"))
+      );
 
     return http.build();
   }
